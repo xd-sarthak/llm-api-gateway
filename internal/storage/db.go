@@ -1,23 +1,23 @@
 package storage
 
 import (
+	"database/sql"
 	"log"
 	"os"
-	"database/sql"
+
 	_ "github.com/lib/pq"
 )
 
-func ConnectDB() *sql.DB {
-	connStr := os.Getenv("DATABASE_URL")
+var DB *sql.DB
 
-	db, err := sql.Open("postgres", connStr)
+func Init() {
+	var err error
+	DB, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatal("failed to connect to postgres:", err)
 	}
-
-	if err := db.Ping(); err != nil {
-		log.Fatal("DB not reachable:", err)
+	if err = DB.Ping(); err != nil {
+		log.Fatal("postgres not reachable:", err)
 	}
-
-	return db
+	log.Println("postgres connected")
 }
