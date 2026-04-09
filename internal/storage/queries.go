@@ -6,18 +6,23 @@ import (
 
 var ErrNoRows = sql.ErrNoRows
 
-func IsValidAPIKey(hashedKey string) (bool, error) {
-	var isActive bool
+type APIKeyRecord struct {
+	Key      string
+	IsActive bool
+}
+
+func GetAPIKeyByHash(hashedKey string) (*APIKeyRecord, error) {
+	var apiKey APIKeyRecord
 	err := DB.QueryRow(
-		"SELECT is_active FROM api_keys WHERE key = $1",
+		"SELECT key, is_active FROM api_keys WHERE key = $1",
 		hashedKey,
-	).Scan(&isActive)
+	).Scan(&apiKey.Key, &apiKey.IsActive)
 
 	if err == sql.ErrNoRows {
-		return false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return isActive, nil
+	return &apiKey, nil
 }

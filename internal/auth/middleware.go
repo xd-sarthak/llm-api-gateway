@@ -27,16 +27,20 @@ func RequireAPIKey(next http.Handler) http.Handler {
 		key := parts[1]
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
 
-		valid, err := storage.IsValidAPIKey(hash)
+		apiKey, err := storage.GetAPIKeyByHash(hash)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		if !valid {
+		if apiKey == nil || !apiKey.IsActive {
 			http.Error(w, "invalid or inactive api key", http.StatusUnauthorized)
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(WithAPIKey(r.Context(), APIKey{
+			ID:        apiKey.Key,
+			HashedKey: apiKey.Key,
+			IsActive:  apiKey.IsActive,
+		})))
 	})
 }

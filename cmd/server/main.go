@@ -4,12 +4,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 	"github.com/xd-sarthak/llm-api-gateway/internal/auth"
 	"github.com/xd-sarthak/llm-api-gateway/internal/proxy"
+	"github.com/xd-sarthak/llm-api-gateway/internal/ratelimit"
 	"github.com/xd-sarthak/llm-api-gateway/internal/storage"
 )
 
@@ -28,6 +31,8 @@ func main() {
 
 	// init db
 	storage.Init()
+	rdb := storage.RedisInit()
+	rateLimitPerMinute := getEnvInt("RATE_LIMIT_PER_MINUTE", 60)
 
 	r := chi.NewRouter()
 
@@ -35,7 +40,10 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.With(auth.RequireAPIKey).Post("/v1/chat/completions", proxy.HandleChat)
+	r.With(
+		auth.RequireAPIKey,
+		ratelimit.Middleware(rdb, rateLimitPerMinute, time.Minute),
+	).Post("/v1/chat/completions", proxy.HandleChat)
 
 	// start server
 	port := os.Getenv("PORT")
@@ -44,4 +52,19 @@ func main() {
 	}
 	log.Printf("server is running on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, r))
+}
+
+func getEnvInt(name string, fallback int) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		log.Printf("warning: invalid %s=%q, using default %d", name, raw, fallback)
+		return fallback
+	}
+
+	return value
 }
