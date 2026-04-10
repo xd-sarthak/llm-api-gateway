@@ -23,6 +23,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// Forward the request stream upstream while honoring client cancellation.
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, URL, limitedBody)
 	if err != nil {
+		log.Printf("proxy failed: could not create upstream request for %s: %v", r.RemoteAddr, err)
 		http.Error(w, "Failed to create request", http.StatusInternalServerError)
 		return
 	}

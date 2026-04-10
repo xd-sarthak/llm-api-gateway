@@ -14,7 +14,7 @@ type APIKeyRecord struct {
 func GetAPIKeyByHash(hashedKey string) (*APIKeyRecord, error) {
 	var apiKey APIKeyRecord
 	err := DB.QueryRow(
-		"SELECT key, is_active FROM api_keys WHERE key = $1",
+		"SELECT key_hash, is_active FROM api_keys WHERE key_hash = $1",
 		hashedKey,
 	).Scan(&apiKey.Key, &apiKey.IsActive)
 

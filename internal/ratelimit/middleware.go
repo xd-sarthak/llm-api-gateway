@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -19,12 +20,14 @@ func Middleware(rdb *redis.Client, limit int, window time.Duration) func(http.Ha
 
 			apiKey, ok := auth.APIKeyFromContext(r.Context())
 			if !ok || apiKey.ID == "" {
+				log.Printf("rate limit failed: missing api key context for %s", r.RemoteAddr)
 				http.Error(w, "missing api key context", http.StatusInternalServerError)
 				return
 			}
 
 			decision, err := AllowRequest(r.Context(), rdb, apiKey.ID, limit, window)
 			if err != nil {
+				log.Printf("rate limit failed: key=%s remote=%s err=%v", apiKey.ID, r.RemoteAddr, err)
 				http.Error(w, "rate limit error", http.StatusInternalServerError)
 				return
 			}
@@ -32,6 +35,7 @@ func Middleware(rdb *redis.Client, limit int, window time.Duration) func(http.Ha
 			setHeaders(w, decision)
 
 			if !decision.Allowed {
+				log.Printf("rate limit exceeded: key=%s remote=%s retry_after=%s", apiKey.ID, r.RemoteAddr, decision.RetryAfter)
 				if retryAfter := RetryAfterSeconds(decision.RetryAfter); retryAfter > 0 {
 					w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 				}

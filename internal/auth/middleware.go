@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -14,12 +15,14 @@ func RequireAPIKey(next http.Handler) http.Handler {
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			log.Printf("auth failed: missing authorization header from %s", r.RemoteAddr)
 			http.Error(w, "missing authorization header", http.StatusUnauthorized)
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
+			log.Printf("auth failed: invalid authorization format from %s", r.RemoteAddr)
 			http.Error(w, "invalid authorization format", http.StatusUnauthorized)
 			return
 		}
@@ -29,10 +32,12 @@ func RequireAPIKey(next http.Handler) http.Handler {
 
 		apiKey, err := storage.GetAPIKeyByHash(hash)
 		if err != nil {
+			log.Printf("auth failed: database lookup error for %s: %v", r.RemoteAddr, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		if apiKey == nil || !apiKey.IsActive {
+			log.Printf("auth failed: invalid or inactive api key from %s", r.RemoteAddr)
 			http.Error(w, "invalid or inactive api key", http.StatusUnauthorized)
 			return
 		}
