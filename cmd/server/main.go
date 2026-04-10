@@ -31,9 +31,25 @@ func main() {
 
 	// init db
 	storage.Init()
-	rdb := storage.RedisInit()
+	rdb, err := storage.RedisInit()
+	if err != nil {
+		log.Fatal("redis not reachable:", err)
+	}
 	rateLimitPerMinute := getEnvInt("RATE_LIMIT_PER_MINUTE", 60)
 
+	if err := proxy.LoadPricing(); err != nil {
+		log.Printf("warning: initial pricing load failed: %v", err)
+	}
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if err := proxy.LoadPricing(); err != nil {
+				log.Println("pricing refresh failed:", err)
+			}
+		}
+	}()
 	r := chi.NewRouter()
 
 	// middleware

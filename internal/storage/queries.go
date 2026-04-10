@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 )
 
@@ -11,9 +12,10 @@ type APIKeyRecord struct {
 	IsActive bool
 }
 
-func GetAPIKeyByHash(hashedKey string) (*APIKeyRecord, error) {
+func GetAPIKeyByHash(ctx context.Context, hashedKey string) (*APIKeyRecord, error) {
 	var apiKey APIKeyRecord
-	err := DB.QueryRow(
+	err := DB.QueryRowContext(
+		ctx,
 		"SELECT key_hash, is_active FROM api_keys WHERE key_hash = $1",
 		hashedKey,
 	).Scan(&apiKey.Key, &apiKey.IsActive)

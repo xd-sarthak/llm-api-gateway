@@ -30,7 +30,7 @@ func RequireAPIKey(next http.Handler) http.Handler {
 		key := parts[1]
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
 
-		apiKey, err := storage.GetAPIKeyByHash(hash)
+		apiKey, err := storage.GetAPIKeyByHash(r.Context(), hash)
 		if err != nil {
 			log.Printf("auth failed: database lookup error for %s: %v", r.RemoteAddr, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
