@@ -2,12 +2,15 @@
 .env
 .env.*
 !.env.example
+.envrc
+.direnv/
 
 # Build output
 bin/
 build/
 dist/
 tmp/
+.tmp/
 
 # Go binaries and test artifacts
 *.exe
@@ -16,6 +19,7 @@ tmp/
 *.so
 *.dylib
 *.test
+.gocache/
 
 # Coverage and profiling
 coverage.out
@@ -34,9 +38,16 @@ yarn-error.log*
 *.sqlite
 *.sqlite3
 
+# Local tooling and scratch files
+.codex
+TESTING.md
+*.local
+docker-compose.override.yml
+
 # Editor and OS files
 .vscode/
 .idea/
+.fleet/
 *.swp
 *.swo
 *~

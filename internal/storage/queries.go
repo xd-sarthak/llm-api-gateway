@@ -16,7 +16,7 @@ func GetAPIKeyByHash(ctx context.Context, hashedKey string) (*APIKeyRecord, erro
 	var apiKey APIKeyRecord
 	err := DB.QueryRowContext(
 		ctx,
-		"SELECT key_hash, is_active FROM api_keys WHERE key_hash = $1",
+		"SELECT key, is_active FROM api_keys WHERE key = $1",
 		hashedKey,
 	).Scan(&apiKey.Key, &apiKey.IsActive)
 

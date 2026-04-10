@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/xd-sarthak/llm-api-gateway/internal/auth"
+	"github.com/xd-sarthak/llm-api-gateway/internal/cache"
 	"github.com/xd-sarthak/llm-api-gateway/internal/storage"
 )
 
@@ -22,6 +23,11 @@ var httpClient = &http.Client{
 	Timeout: 60 * time.Second,
 }
 
+var (
+	cacheLookup = cache.Lookup
+	cacheStore  = cache.Store
+)
+
 type openRouterResponse struct {
 	Model string `json:"model"`
 	Usage struct {
@@ -32,7 +38,8 @@ type openRouterResponse struct {
 }
 
 type chatRequest struct {
-	Model string `json:"model"`
+	Model    string              `json:"model"`
+	Messages []map[string]string `json:"messages"`
 }
 
 func HandleChat(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +72,24 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		log.Println("request creation error:", err)
 		http.Error(w, "failed to create upstream request", http.StatusInternalServerError)
 		return
+	}
+
+	prompt := cache.ExtractPrompt(chatReq.Messages)
+
+	if prompt != "" {
+		cached, hit, err := cacheLookup(prompt, chatReq.Model)
+		if err != nil {
+			log.Printf("cache lookup failed: model=%s remote=%s err=%v", chatReq.Model, r.RemoteAddr, err)
+		} else if hit {
+			log.Printf("cache hit: model=%s remote=%s prompt=%.50s", chatReq.Model, r.RemoteAddr, prompt)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Cache", "HIT")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write([]byte(cached)); err != nil {
+				log.Println("cache hit response write error:", err)
+			}
+			return
+		}
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -105,6 +130,14 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			Cost:             cost,
 		}); err != nil {
 			log.Println("failed to log usage:", err)
+		}
+
+		if prompt != "" && resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+			if err := cacheStore(prompt, string(respBody), chatReq.Model); err != nil {
+				log.Printf("cache store failed: model=%s remote=%s err=%v", chatReq.Model, r.RemoteAddr, err)
+			}
+		} else if prompt != "" {
+			log.Printf("skipping cache store for non-success upstream response: model=%s status=%d remote=%s", chatReq.Model, resp.StatusCode, r.RemoteAddr)
 		}
 	}()
 
