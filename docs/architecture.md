@@ -91,7 +91,7 @@ Authentication flow:
 2. Split on the first space
 3. Require the `Bearer` scheme
 4. SHA-256 hash the supplied token
-5. Call `storage.IsValidAPIKey(hash)`
+5. Call `storage.GetAPIKeyByHash(hash)`
 6. Continue only if the database returns `is_active = true`
 
 ### 3. Proxy Handler

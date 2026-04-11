@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"net/http"
 	"fmt"
+	"net/http"
 
 	"github.com/xd-sarthak/llm-api-gateway/internal/storage"
 )
@@ -101,20 +101,23 @@ func DeactivateKey(w http.ResponseWriter, r *http.Request) {
 }
 
 //GET /admin/usage
-func GetUsage(w http.ResponseWriter, r *http.Request){
-	rows,err := storage.DB.Query(`
+func GetUsage(w http.ResponseWriter, r *http.Request) {
+	rows, err := storage.DB.Query(`
 	SELECT
-		api_key,
-		model,
+		u.api_key,
+		COALESCE(k.name, LEFT(u.api_key, 8) || '...') AS key_name,
+		u.model,
 		COUNT(*) AS requests,
-		SUM(total_tokens) AS total_tokens,
-		SUM(cost_usd) AS total_cost,
-		AVG(latency_ms) AS avg_latency_ms
-	FROM usage_logs
-	GROUP BY api_key, model
+		SUM(u.prompt_tokens) AS prompt_tokens,
+		SUM(u.completion_tokens) AS completion_tokens,
+		SUM(u.total_tokens) AS total_tokens,
+		SUM(u.cost_usd) AS total_cost,
+		AVG(u.latency_ms) AS avg_latency_ms
+	FROM usage_logs u
+	LEFT JOIN api_keys k ON k.key = u.api_key
+	GROUP BY u.api_key, k.name, u.model
 	ORDER BY total_tokens DESC
-		
-		`)
+	`)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -122,18 +125,21 @@ func GetUsage(w http.ResponseWriter, r *http.Request){
 	defer rows.Close()
 
 	type usageRow struct {
-		APIKey string `json:"api_key"`
-		Model string `json:"model"`
-		Requests int `json:"requests"`
-		TotalTokens int `json:"total_tokens"`
-		TotalCost float64 `json:"total_cost_usd"`
-		AvgLatencyMs float64 `json:"avg_latency_ms"`
+		APIKey           string  `json:"api_key"`
+		KeyName          string  `json:"key_name"`
+		Model            string  `json:"model"`
+		Requests         int     `json:"requests"`
+		PromptTokens     int     `json:"prompt_tokens"`
+		CompletionTokens int     `json:"completion_tokens"`
+		TotalTokens      int     `json:"total_tokens"`
+		TotalCost        float64 `json:"total_cost_usd"`
+		AvgLatencyMs     float64 `json:"avg_latency_ms"`
 	}
 
 	usage := []usageRow{}
 	for rows.Next() {
 		var u usageRow
-		rows.Scan(&u.APIKey, &u.Model, &u.Requests, &u.TotalTokens, &u.TotalCost, &u.AvgLatencyMs)
+		rows.Scan(&u.APIKey, &u.KeyName, &u.Model, &u.Requests, &u.PromptTokens, &u.CompletionTokens, &u.TotalTokens, &u.TotalCost, &u.AvgLatencyMs)
 		usage = append(usage, u)
 	}
 
