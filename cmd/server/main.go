@@ -14,6 +14,7 @@ import (
 	"github.com/xd-sarthak/llm-api-gateway/internal/proxy"
 	"github.com/xd-sarthak/llm-api-gateway/internal/ratelimit"
 	"github.com/xd-sarthak/llm-api-gateway/internal/storage"
+	"github.com/xd-sarthak/llm-api-gateway/internal/admin"
 )
 
 func main() {
@@ -60,6 +61,9 @@ func main() {
 		auth.RequireAPIKey,
 		ratelimit.Middleware(rdb, rateLimitPerMinute, time.Minute),
 	).Post("/v1/chat/completions", proxy.HandleChat)
+
+	// register admin routes
+	admin.RegisterRoutes(r)
 
 	// start server
 	port := os.Getenv("PORT")
