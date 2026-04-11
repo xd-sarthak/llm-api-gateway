@@ -38,8 +38,13 @@ yarn-error.log*
 *.sqlite
 *.sqlite3
 
-# Local tooling and scratch files
+# AI assistant files
 .codex
+AGENTS.md
+CLAUDE.md
+.gemini/
+
+# Local tooling and scratch files
 TESTING.md
 *.local
 docker-compose.override.yml

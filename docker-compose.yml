@@ -19,5 +19,17 @@ services:
       start_period: 10s
     shm_size: 256mb
 
+  redis:
+    image: redis:7-alpine
+    container_name: llm-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
