@@ -1,9 +1,11 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -222,5 +224,112 @@ func TestLookupSemanticQueryUsesSimilarityThreshold(t *testing.T) {
 	}
 	if len(semanticQuery.args) != 1 {
 		t.Fatalf("expected semantic lookup to use 1 arg, got %d", len(semanticQuery.args))
+	}
+}
+
+func TestLookupLogsStructuredSemanticMissEvent(t *testing.T) {
+	originalDB := storage.DB
+	originalGetEmbedding := getEmbedding
+	originalWriter := cacheEventWriter
+	t.Cleanup(func() {
+		storage.DB = originalDB
+		getEmbedding = originalGetEmbedding
+		cacheEventWriter = originalWriter
+	})
+
+	getEmbedding = func(text string) ([]float32, error) {
+		return []float32{0.1, 0.2, 0.3}, nil
+	}
+
+	stub := &queryStub{
+		responses: []queryResponse{
+			{err: sql.ErrNoRows},
+			{
+				columns: []string{"response", "similarity"},
+				rows:    [][]driver.Value{{`{"semantic":true}`, 0.61}},
+			},
+		},
+	}
+	storage.DB = openQueryDB(t, stub)
+
+	var buf bytes.Buffer
+	cacheEventWriter = &buf
+
+	response, hit, err := Lookup("What is a cache hit?", "model-c")
+	if err != nil {
+		t.Fatalf("lookup error: %v", err)
+	}
+	if hit {
+		t.Fatal("expected miss when similarity is below threshold")
+	}
+	if response != "" {
+		t.Fatalf("expected empty response, got %q", response)
+	}
+
+	var event cacheLookupEvent
+	if err := json.NewDecoder(&buf).Decode(&event); err != nil {
+		t.Fatalf("decode event: %v", err)
+	}
+	if event.HitType != "miss" {
+		t.Fatalf("expected miss event, got %q", event.HitType)
+	}
+	if event.SimilarityScore == nil || *event.SimilarityScore != 0.61 {
+		t.Fatalf("expected similarity 0.61, got %#v", event.SimilarityScore)
+	}
+	if event.PromptBucket != "factual" {
+		t.Fatalf("expected factual bucket, got %q", event.PromptBucket)
+	}
+	if event.ModelScope != "global" || event.ScopedPerModel {
+		t.Fatalf("unexpected model scope fields: %+v", event)
+	}
+}
+
+func TestLookupLogsStructuredExactHitEvent(t *testing.T) {
+	originalDB := storage.DB
+	originalWriter := cacheEventWriter
+	t.Cleanup(func() {
+		storage.DB = originalDB
+		cacheEventWriter = originalWriter
+	})
+
+	stub := &queryStub{
+		responses: []queryResponse{
+			{
+				columns: []string{"response"},
+				rows:    [][]driver.Value{{`{"cached":true}`}},
+			},
+		},
+	}
+	storage.DB = openQueryDB(t, stub)
+
+	var buf bytes.Buffer
+	cacheEventWriter = &buf
+
+	response, hit, err := Lookup("package main\nfunc main() {}", "model-d")
+	if err != nil {
+		t.Fatalf("lookup error: %v", err)
+	}
+	if !hit {
+		t.Fatal("expected exact hit")
+	}
+	if response != `{"cached":true}` {
+		t.Fatalf("unexpected response %q", response)
+	}
+
+	var event cacheLookupEvent
+	if err := json.NewDecoder(&buf).Decode(&event); err != nil {
+		t.Fatalf("decode event: %v", err)
+	}
+	if event.HitType != "exact" {
+		t.Fatalf("expected exact hit event, got %q", event.HitType)
+	}
+	if event.SimilarityScore == nil || *event.SimilarityScore != 1 {
+		t.Fatalf("expected similarity 1.0, got %#v", event.SimilarityScore)
+	}
+	if event.PromptBucket != "code" {
+		t.Fatalf("expected code bucket, got %q", event.PromptBucket)
+	}
+	if event.EmbeddingMs != 0 || event.SemanticLookupMs != 0 {
+		t.Fatalf("expected no semantic timings on exact hit, got %+v", event)
 	}
 }

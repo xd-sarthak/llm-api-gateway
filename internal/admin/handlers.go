@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/xd-sarthak/llm-api-gateway/internal/metrics"
 	"github.com/xd-sarthak/llm-api-gateway/internal/storage"
 )
-
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -31,9 +31,9 @@ func ListKeys(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type key struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		IsActive bool   `json:"is_active"`
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		IsActive  bool   `json:"is_active"`
 		CreatedAt string `json:"created_at"`
 	}
 
@@ -47,10 +47,10 @@ func ListKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, keys)
 }
 
-//POST /admin/keys
+// POST /admin/keys
 func CreateKey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-	Name string `json:"name"`
+		Name string `json:"name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
@@ -100,7 +100,7 @@ func DeactivateKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Key deactivated"})
 }
 
-//GET /admin/usage
+// GET /admin/usage
 func GetUsage(w http.ResponseWriter, r *http.Request) {
 	rows, err := storage.DB.Query(`
 	SELECT
@@ -137,10 +137,28 @@ func GetUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	usage := []usageRow{}
+	columns, err := rows.Columns()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	for rows.Next() {
 		var u usageRow
-		rows.Scan(&u.APIKey, &u.KeyName, &u.Model, &u.Requests, &u.PromptTokens, &u.CompletionTokens, &u.TotalTokens, &u.TotalCost, &u.AvgLatencyMs)
+		if len(columns) == 8 {
+			if err := rows.Scan(&u.APIKey, &u.Model, &u.Requests, &u.PromptTokens, &u.CompletionTokens, &u.TotalTokens, &u.TotalCost, &u.AvgLatencyMs); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			u.KeyName = u.APIKey
+		} else if err := rows.Scan(&u.APIKey, &u.KeyName, &u.Model, &u.Requests, &u.PromptTokens, &u.CompletionTokens, &u.TotalTokens, &u.TotalCost, &u.AvgLatencyMs); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		usage = append(usage, u)
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, usage)
@@ -149,11 +167,11 @@ func GetUsage(w http.ResponseWriter, r *http.Request) {
 // GET /admin/stats
 func GetStats(w http.ResponseWriter, r *http.Request) {
 	var stats struct {
-		TotalRequests  int     `json:"total_requests"`
-		TotalTokens    int     `json:"total_tokens"`
-		TotalCostUSD   float64 `json:"total_cost_usd"`
-		AvgLatencyMs   float64 `json:"avg_latency_ms"`
-		CacheEntries   int     `json:"cache_entries"`
+		TotalRequests int     `json:"total_requests"`
+		TotalTokens   int     `json:"total_tokens"`
+		TotalCostUSD  float64 `json:"total_cost_usd"`
+		AvgLatencyMs  float64 `json:"avg_latency_ms"`
+		CacheEntries  int     `json:"cache_entries"`
 	}
 
 	storage.DB.QueryRow(`
@@ -168,4 +186,14 @@ func GetStats(w http.ResponseWriter, r *http.Request) {
 	storage.DB.QueryRow(`SELECT COUNT(*) FROM semantic_cache`).Scan(&stats.CacheEntries)
 
 	writeJSON(w, http.StatusOK, stats)
+}
+
+// GET /metrics and /admin/metrics
+func Metrics(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, metrics.CurrentSnapshot())
+}
+
+// GET /metrics/prometheus and /admin/metrics/prometheus
+func PrometheusMetrics(w http.ResponseWriter, r *http.Request) {
+	metrics.PrometheusHandler(w, r)
 }

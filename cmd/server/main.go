@@ -10,11 +10,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
+	"github.com/xd-sarthak/llm-api-gateway/internal/admin"
 	"github.com/xd-sarthak/llm-api-gateway/internal/auth"
+	appmetrics "github.com/xd-sarthak/llm-api-gateway/internal/metrics"
 	"github.com/xd-sarthak/llm-api-gateway/internal/proxy"
 	"github.com/xd-sarthak/llm-api-gateway/internal/ratelimit"
 	"github.com/xd-sarthak/llm-api-gateway/internal/storage"
-	"github.com/xd-sarthak/llm-api-gateway/internal/admin"
 )
 
 func main() {
@@ -36,6 +37,32 @@ func main() {
 	if err != nil {
 		log.Fatal("redis not reachable:", err)
 	}
+	appmetrics.SetEventSink(func(event appmetrics.Event) {
+		if err := storage.InsertMetricEvent(event); err != nil {
+			log.Printf("metric event insert failed: category=%s name=%s err=%v", event.Category, event.Name, err)
+		}
+	})
+	appmetrics.SetResourceCollector(func() map[string]any {
+		dbStats := storage.DB.Stats()
+		redisStats := rdb.PoolStats()
+		return map[string]any{
+			"postgres_pool": map[string]any{
+				"open_connections": dbStats.OpenConnections,
+				"in_use":           dbStats.InUse,
+				"idle":             dbStats.Idle,
+				"wait_count":       dbStats.WaitCount,
+				"wait_duration_ms": dbStats.WaitDuration.Milliseconds(),
+			},
+			"redis_pool": map[string]any{
+				"hits":        redisStats.Hits,
+				"misses":      redisStats.Misses,
+				"timeouts":    redisStats.Timeouts,
+				"total_conns": redisStats.TotalConns,
+				"idle_conns":  redisStats.IdleConns,
+				"stale_conns": redisStats.StaleConns,
+			},
+		}
+	})
 	rateLimitPerMinute := getEnvInt("RATE_LIMIT_PER_MINUTE", 60)
 
 	if err := proxy.LoadPricing(); err != nil {
@@ -56,6 +83,7 @@ func main() {
 	// middleware
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(appmetrics.HTTPMiddleware)
 	r.Use(corsMiddleware)
 
 	r.With(
@@ -104,4 +132,3 @@ func corsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
